@@ -25,6 +25,12 @@ else:
     file_list.close()
 
 workbook = xlsxwriter.Workbook('test.xlsx', {'strings_to_numbers': True})
+
+format_green = workbook.add_format({'bg_color': '#C6EFCE'})
+format_yellow = workbook.add_format({'bg_color': '#FFFF00'})
+format_pink = workbook.add_format({'bg_color': '#FF8AD8'})
+format_red = workbook.add_format({'bg_color': '#FF0000', 'font_color': '#FFFFFF'})
+
 worksheet_all = workbook.add_worksheet('all_data')
 worksheet_cpk = workbook.add_worksheet('cpk')
 
@@ -59,6 +65,25 @@ worksheet_cpk.write_formula(7,5,'=ABS(F3-F10)/(3*F9)')
 worksheet_cpk.write_formula(8,5,'=STDEV(F12:F2000)')
 worksheet_cpk.write_formula(9,5,'=AVERAGE(F12:F2000)')
 worksheet_cpk.write_formula(10,5,'=COUNT(F12:F2000)')
+
+worksheet_cpk.conditional_format('F6:F8',{'type': 'cell',
+                                     'criteria': '>=',
+                                     'value': 2,
+                                     'format': format_green})
+worksheet_cpk.conditional_format('F6:F8',{'type': 'cell',
+                                     'criteria': 'between',
+                                     'minimum': 1,
+                                     'maximum': 1.33,
+                                     'format': format_yellow})
+worksheet_cpk.conditional_format('F6:F8',{'type': 'cell',
+                                     'criteria': 'between',
+                                     'minimum': 0.67,
+                                     'maximum': 1,
+                                     'format': format_pink})
+worksheet_cpk.conditional_format('F6:F8',{'type': 'cell',
+                                     'criteria': '<',
+                                     'value': 0.67,
+                                     'format': format_red})
 
 if os.path.isdir(files[0]):
     for d in files:
