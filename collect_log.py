@@ -8,13 +8,17 @@ from time import asctime, gmtime
 import time
 import datetime
 import xlsxwriter
+import zipfile
+from StringIO import StringIO
 from xlsxwriter.utility import xl_range,xl_col_to_name
 
 # argv[1]: file
-if len(sys.argv) == 2:
+if len(sys.argv) == 3:
     path = sys.argv[1]
+    output = sys.argv[2]
+    print ('Writing {}.xlsx'.format(output))
 else:
-    print ("Usage: " + sys.argv[0] + " file_list")
+    print ("Usage: " + sys.argv[0] + " file_list" + " output_file_name")
     exit()
 
 if sys.argv[1] == "--":
@@ -24,7 +28,7 @@ else:
     files = [f.strip() for f in file_list]
     file_list.close()
 
-workbook = xlsxwriter.Workbook('test.xlsx', {'strings_to_numbers': True})
+workbook = xlsxwriter.Workbook('{}.xlsx'.format(output), {'strings_to_numbers': True})
 
 format_green = workbook.add_format({'bg_color': '#C6EFCE'})
 format_yellow = workbook.add_format({'bg_color': '#FFFF00'})
@@ -54,64 +58,75 @@ all_row_num = 11
 column_num = 0
 cpk_columns = []
 
-if os.path.isdir(files[0]):
-    for d in files:
-        with open(d+'/metadata.csv','r') as metafile:
-            metacsv = csv.reader(metafile)
+if '.zip' in files[0]:
+    for z in files:
+        archive = zipfile.ZipFile(z,'r')
+        metafile = StringIO(archive.read('metadata.csv'))
+        metacsv = csv.reader(metafile,delimiter=',')
 
-            next(metacsv) # bypass title
-            row = next(metacsv) 
-            if row[13] != 'PASS': # if not pass, measurements will be lost some items
-                continue
-        with open(d+'/measurements.csv', 'r') as measurefile:
-            print "Using " + d + "/measurements.csv to list items"
-            measurecsv = csv.reader(measurefile)
+        row = metacsv.next() # bypass title
+        row = metacsv.next()
+        if row[13] != 'PASS': # if not pass, measurements will be lost some items
+            archive.close()
+            continue
+        measurefile = StringIO(archive.read('measurements.csv'))
+        print "Using " + z + "/measurements.csv to list items"
+        measurecsv = csv.reader(measurefile,delimiter=',')
 
-            next(measurecsv) # bypass title
-            column_num = 5
-            for row_i in measurecsv:
-                worksheet_all.write_string(0,column_num,row_i[0]) # Test item name
-                if row_i[7] not in (None,"", ' ', '--'): 
-                    worksheet_all.write_number(1,column_num,float(row_i[7])) # Number Min
-                if row_i[6] not in (None,"", ' ', '--'): 
-                    worksheet_all.write_number(2,column_num,float(row_i[6])) # Number Max
-                column_num += 1
-            break
+        next(measurecsv) # bypass title
+        column_num = 5
+        for row_i in measurecsv:
+            worksheet_all.write_string(0,column_num,row_i[0]) # Test item name
+            if row_i[7] not in (None,"", ' ', '--'): 
+                worksheet_all.write_number(1,column_num,float(row_i[7])) # Number Min
+            if row_i[6] not in (None,"", ' ', '--'): 
+                worksheet_all.write_number(2,column_num,float(row_i[6])) # Number Max
+            column_num += 1
+        archive.close()
+        break
 
-    for f in files:
-        if not os.path.isfile(f+'/metadata.csv'):
+    for z in files:
+        archive = zipfile.ZipFile(z,'r')
+        try:
+            metafile = StringIO(archive.read('metadata.csv'))
+        except:
             print ("Missing " + f + '/metadata.csv')
+            archive.close()
             continue
-        if not os.path.isfile(f+'/measurements.csv'):
-            print ("Missing " + f + '/measurements.csv')
+        try:
+            measurefile = StringIO(archive.read('measurements.csv'))
+        except:
+            print ("Missing " + f + '/metadata.csv')
+            archive.close()
             continue
-        with open(f+'/metadata.csv','r') as metafile:
-                metacsv = csv.reader(metafile)
-                row = []
 
-                next(metacsv) # bypass title
-                row = next(metacsv) 
-                worksheet_all.write_string(all_row_num, 0, f) # filename / folder
-                worksheet_all.write_string(all_row_num, 1, row[0]) # DUT_ID
-                worksheet_all.write_string(all_row_num, 2, row[16]) # START_DATE_TIME
-                worksheet_all.write_string(all_row_num, 3, row[13]) # STATUS
-                worksheet_all.write_string(all_row_num, 4, row[14]) # FAILURE_CODE
+        metacsv = csv.reader(metafile,delimiter=',')
+        row = []
 
-                with open(f+'/measurements.csv', 'r') as measurefile:
-                    measurecsv = csv.reader(measurefile)
-                    next(measurecsv) # bypass title
-                    column_num = 5
-                    for row_i in measurecsv:
-                        if row_i[5] in (None, "", ' '):
-                            worksheet_all.write_string(all_row_num, column_num, row_i[9])
-                        else:
-                            try:
-                                worksheet_all.write_number(all_row_num, column_num, float(row_i[5]))
-                                cpk_columns.append(column_num)
-                            except:
-                                worksheet_all.write_string(all_row_num, column_num, row_i[5])
-                        column_num += 1
-                all_row_num += 1
+        next(metacsv) # bypass title
+        row = next(metacsv) 
+        worksheet_all.write_string(all_row_num, 0, f) # filename / folder
+        worksheet_all.write_string(all_row_num, 1, row[0]) # DUT_ID
+        worksheet_all.write_string(all_row_num, 2, row[16]) # START_DATE_TIME
+        worksheet_all.write_string(all_row_num, 3, row[13]) # STATUS
+        worksheet_all.write_string(all_row_num, 4, row[14]) # FAILURE_CODE
+
+        measurecsv = csv.reader(measurefile,delimiter=',')
+        next(measurecsv) # bypass title
+        column_num = 5
+        for row_i in measurecsv:
+            if row_i[5] in (None, "", ' '):
+                worksheet_all.write_string(all_row_num, column_num, row_i[9])
+            else:
+                try:
+                    worksheet_all.write_number(all_row_num, column_num, float(row_i[5]))
+                    cpk_columns.append(column_num)
+                except:
+                    worksheet_all.write_string(all_row_num, column_num, row_i[5])
+            column_num += 1
+
+        all_row_num += 1
+        archive.close()
 
 elif '.scj' in files[0]:
     for f in files:
