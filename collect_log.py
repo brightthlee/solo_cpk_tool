@@ -9,6 +9,7 @@ import time
 import datetime
 import xlsxwriter
 import zipfile
+import operator
 from StringIO import StringIO
 from xlsxwriter.utility import xl_range,xl_col_to_name
 
@@ -16,7 +17,7 @@ from xlsxwriter.utility import xl_range,xl_col_to_name
 if len(sys.argv) == 3:
     path = sys.argv[1]
     output = sys.argv[2]
-    print ('Writing {}.xlsx'.format(output))
+    print ('Writing {0}.xlsx and {0}.csv'.format(output))
 else:
     print ("Usage: " + sys.argv[0] + " file_list" + " output_file_name")
     exit()
@@ -29,6 +30,8 @@ else:
     file_list.close()
 
 workbook = xlsxwriter.Workbook('{}.xlsx'.format(output), {'strings_to_numbers': True})
+cpk_csv = open('{}.csv'.format(output),'w')
+csvwriter = csv.writer(cpk_csv)
 
 format_green = workbook.add_format({'bg_color': '#C6EFCE'})
 format_yellow = workbook.add_format({'bg_color': '#FFFF00'})
@@ -36,6 +39,7 @@ format_pink = workbook.add_format({'bg_color': '#FF8AD8'})
 format_red = workbook.add_format({'bg_color': '#FF0000', 'font_color': '#FFFFFF'})
 
 worksheet_all = workbook.add_worksheet('all_data')
+worksheet_all.freeze_panes(11,1)
 
 worksheet_all.write_string(0,0,'Filename')
 worksheet_all.write_string(0,1,'DUT_ID')
@@ -57,6 +61,9 @@ worksheet_all.write_string(10,0,'Useful COUNT')
 all_row_num = 11
 column_num = 0
 cpk_columns = []
+csv_items = []
+csv_lsl = []
+csv_usl = []
 
 if '.zip' in files[0]:
     for z in files:
@@ -77,13 +84,29 @@ if '.zip' in files[0]:
         column_num = 5
         for row_i in measurecsv:
             worksheet_all.write_string(0,column_num,row_i[0]) # Test item name
-            if row_i[7] not in (None,"", ' ', '--'): 
+            ok_to_cpk = False
+            if row_i[7] not in (None, "", ' ', '--'): 
                 worksheet_all.write_number(1,column_num,float(row_i[7])) # Number Min
-            if row_i[6] not in (None,"", ' ', '--'): 
+                ok_to_cpk = True
+            if row_i[6] not in (None, "", ' ', '--'): 
                 worksheet_all.write_number(2,column_num,float(row_i[6])) # Number Max
+                ok_to_cpk = True
+            if row_i[5] not in (None, "", ' ', '--'): # Numeric Value
+                try:
+                    float(row_i[5]) # check if could convert to numbers
+                    if ok_to_cpk == True:
+                        cpk_columns.append(column_num)
+                        csv_items.append(row_i[0])
+                        csv_lsl.append(row_i[7])
+                        csv_usl.append(row_i[6])
+                except:
+                    None
+
             column_num += 1
         archive.close()
         break
+
+    all_csv_row = []
 
     for z in files:
         archive = zipfile.ZipFile(z,'r')
@@ -111,6 +134,8 @@ if '.zip' in files[0]:
         worksheet_all.write_string(all_row_num, 3, row[13]) # STATUS
         worksheet_all.write_string(all_row_num, 4, row[14]) # FAILURE_CODE
 
+        csv_row = [row[16], row[0]] # START_DATE_TIME, DUT_ID
+
         measurecsv = csv.reader(measurefile,delimiter=',')
         next(measurecsv) # bypass title
         column_num = 5
@@ -120,13 +145,16 @@ if '.zip' in files[0]:
             else:
                 try:
                     worksheet_all.write_number(all_row_num, column_num, float(row_i[5]))
-                    cpk_columns.append(column_num)
+                    if row_i[0] in csv_items:
+                        csv_row.append(row_i[5])
                 except:
                     worksheet_all.write_string(all_row_num, column_num, row_i[5])
             column_num += 1
 
         all_row_num += 1
         archive.close()
+        if row[13] == 'PASS':
+            all_csv_row.append(csv_row)
 
 elif '.scj' in files[0]:
     for f in files:
@@ -143,8 +171,15 @@ elif '.scj' in files[0]:
                         worksheet_all.write_number(1,column_num,mea['numeric_min']) # Number Min
                     if 'numeric_max' in mea:
                         worksheet_all.write_number(2,column_num,mea['numeric_max']) # Number Max
+                    if 'numeric_value' in mea and mea['text_value'] != "inf":
+                        cpk_columns.append(column_num)
+                        csv_items.append(mea['name'])
+                        csv_lsl.append(mea['numeric_min'] if mea.has_key('numeric_min') else '')
+                        csv_usl.append(mea['numeric_max'] if mea.has_key('numeric_max') else '')
                     column_num += 1
             break
+
+    all_csv_row = []
 
     for f in files:
         with open(f,'r') as json_file:
@@ -152,20 +187,32 @@ elif '.scj' in files[0]:
 
             worksheet_all.write_string(all_row_num, 0, f) # filename
             worksheet_all.write_string(all_row_num, 1, data['dut_id']) # DUT_ID
-            worksheet_all.write_string(all_row_num, 2, asctime(gmtime(data['start_time_ms']/1000))) # START_DATE_TIME
+            start_date_time = asctime(gmtime(data['start_time_ms']/1000)) # START_DATE_TIME
+            worksheet_all.write_string(all_row_num, 2, start_date_time)
             worksheet_all.write_string(all_row_num, 3, data['status']) # STATUS
             # worksheet_all.write_string(all_row_num, 4, ) # FAILURE_CODE
+
+            csv_row = [start_date_time, data['dut_id']]
 
             column_num = 5
             for i in range (0, len(data['phases'])):
                 for mea in data['phases'][i]['measurements']:
                     if 'numeric_value' in mea and mea['text_value'] != "inf":
                         worksheet_all.write_number(all_row_num, column_num, mea['numeric_value'])
-                        cpk_columns.append(column_num)
+                        if mea['name'] in csv_items:
+                            csv_row.append(mea['numeric_value'])
                     else:
                         worksheet_all.write_string(all_row_num, column_num, mea['text_value'])
                     column_num += 1
+            if data['status'] == 'PASS':
+                all_csv_row.append(csv_row)
             all_row_num += 1
+
+csvwriter.writerow(['DUT_ID'] + csv_items)
+csvwriter.writerow(['LSL'] + csv_lsl)
+csvwriter.writerow(['USL'] + csv_usl)
+for row in sorted(all_csv_row, key = operator.itemgetter(0), reverse=False):
+    csvwriter.writerow(row[1:])
 
 for i in cpk_columns:
     column_letter = xl_col_to_name(i)
@@ -197,3 +244,4 @@ for i in cpk_columns:
                                                        'value': 0.67,
                                                        'format': format_red})
 workbook.close()
+cpk_csv.close()
