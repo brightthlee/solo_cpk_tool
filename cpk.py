@@ -30,7 +30,7 @@ else:
     file_list.close()
 
 workbook = xlsxwriter.Workbook('{}.xlsx'.format(output), {'strings_to_numbers': True})
-cpk_csv = open('{}.csv'.format(output),'w')
+cpk_csv = open('{}.csv'.format(output),'wb')
 csvwriter = csv.writer(cpk_csv)
 
 format_green = workbook.add_format({'bg_color': '#C6EFCE'})
@@ -143,7 +143,7 @@ if '.zip' in files[0]:
                 try:
                     mea_row.append(float(row_i[NUMERIC_VALUE]))
                 except:
-                    mea_row.append(float([NUMERIC_VALUE]))
+                    mea_row.append(row_i[NUMERIC_VALUE])
 
         all_data_rows.append(mea_row)
         archive.close()
@@ -194,8 +194,11 @@ worksheet_all.write_row(1,0,LSLs)
 worksheet_all.write_row(2,0,USLs)
 worksheet_all.write_column(3,0,['MIN','MAX','CPK','CPK-','CPK+','STDEV','AVERAGE','Useful Count'])
 
-for i in range(0, len(mea_data_sorted)):
-    worksheet_all.write_row(11+i, 0, mea_data_sorted[i])
+column_num = 11
+for data in mea_data_sorted:
+    # if data[3] == 'PASS':
+        worksheet_all.write_row(column_num, 0, data)
+        column_num += 1
 
 worksheet_all.freeze_panes(11,1)
 
@@ -240,8 +243,8 @@ for i in range(1,len(ITEMs)):
 csvwriter.writerows([csv_items,csv_lsl,csv_usl])
 
 for data in mea_data_sorted:
-    row = []
     if data[3] == 'PASS':
+        row = []
         row.append(data[1])
         # for i in numeric_columns:
         for i in range(1, len(LSLs)):
